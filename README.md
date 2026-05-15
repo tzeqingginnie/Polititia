@@ -18,28 +18,44 @@ ignored by git.
 Run from the repository root.
 
 ```bash
-python3 scripts/download_assemblee_data.py
-python3 extract_speeches.py "data/raw/xml/compteRendu/*.xml" "extracted_texts/project_full"
-python3 analyze_project_ngrams.py \
+uv run python scripts/download_assemblee_data.py
+uv run python extract_speeches.py "data/raw/xml/compteRendu/*.xml" "extracted_texts/project_full"
+uv run python analyze_project_ngrams.py \
   --speaker-dir "extracted_texts/project_full/by_speaker" \
   --out-dir "analysis_outputs/plain_project_content_stable" \
   --token-mode surface_content \
   --ngram-sizes 1 2 3 4 \
   --top-k 25 \
   --min-distinctive-count 50
-python3 dashboard/build_dashboard_data.py
+uv run python dashboard/build_dashboard_data.py
 ```
 
-Then open `dashboard/index.html`.
+## Serve Dashboard
+
+Build `dashboard/data/dashboard-data.js` first with the pipeline command above,
+then serve the dashboard directory:
+
+```bash
+uv run python -m http.server 8000 --directory dashboard
+```
+
+Open http://localhost:8000 in a browser. Stop the server with `Ctrl-C`.
 
 Optional per-speaker distribution export:
 
 ```bash
-python3 ngram_distribution.py "extracted_texts/project_full/by_speaker" \
+uv run python ngram_distribution.py "extracted_texts/project_full/by_speaker" \
   --out "analysis_outputs/ngram_distribution_project_full_surface.csv" \
   --ngram-sizes 1 2 3 4 \
   --top-k 20 \
   --token-mode surface
+```
+
+The documented pipeline has no third-party dependencies. The optional
+`lemma_content` modes use spaCy and can be run with:
+
+```bash
+uv run --extra lemma python analyze_project_ngrams.py --token-mode lemma_content
 ```
 
 ## Ignored Outputs
