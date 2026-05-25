@@ -21,6 +21,23 @@ const dialogContent = document.getElementById("dialogContent");
 const tokenLogs = data.politicians.map((person) => Math.log1p(person.surfaceTokenCount || 0));
 const minTokenLog = Math.min(...tokenLogs);
 const maxTokenLog = Math.max(...tokenLogs);
+const languageMarkers = data.languageMarkers || { metrics: [], partyRows: [], summary: {} };
+const languageMetricMap = new Map((languageMarkers.metrics || []).map((metric) => [metric.key, metric]));
+const pronounKeys = ["nous", "je", "il", "vous"];
+const lexicalMetricKeys = ["LD", "BW", "MWL", "MSL", "TTR"];
+const languagePalette = ["#2f6f73", "#b35d32", "#6f5b9e", "#2d9b68", "#c43b58", "#3156a3", "#e4a72c"];
+const dashboardPartyToLanguageParty = {
+  LFI_NFP: "La France Insoumise",
+  GDR: "Parti communiste français",
+  EcoS: "Europe Écologie Les Verts",
+  SOC: "Parti socialiste",
+  Dem: "Ensemble",
+  EPR: "Ensemble",
+  HOR: "Ensemble",
+  DR: "Les Républicains",
+  RN: "Rassemblement national",
+  UNLABELED: "Non déclaré(s)",
+};
 
 const state = {
   activeTab: "politician",
@@ -29,6 +46,7 @@ const state = {
   partyFilter: "ALL",
   ngram: "2",
   markerCategory: null,
+  languageMetric: "LD",
   search: "",
   showUnlabeled: false,
 };
@@ -58,6 +76,52 @@ function fmtCompact(value) {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(Number(value || 0));
+}
+
+function languageMetric(key) {
+  return languageMetricMap.get(key) || { key, label: key, shortLabel: key, unit: "value" };
+}
+
+function languageValue(row, key) {
+  return Number(row?.values?.[key] || 0);
+}
+
+function fmtLanguageValue(key, value) {
+  const unit = languageMetric(key).unit;
+  if (unit === "percent") {
+    return `${(Number(value || 0) * 100).toFixed(1)}%`;
+  }
+  if (unit === "ratio") {
+    return Number(value || 0).toFixed(3);
+  }
+  if (unit === "perMille") {
+    return `${Number(value || 0).toFixed(1)}\u2030`;
+  }
+  if (unit === "chars") {
+    return `${Number(value || 0).toFixed(1)} ch`;
+  }
+  if (unit === "words") {
+    return `${Number(value || 0).toFixed(1)} w`;
+  }
+  return Number(value || 0).toFixed(2);
+}
+
+function languageColor(index) {
+  return languagePalette[index % languagePalette.length];
+}
+
+function languageRowsForMetric(metricKey) {
+  return [...(languageMarkers.partyRows || [])]
+    .filter((row) => Number.isFinite(languageValue(row, metricKey)))
+    .sort((a, b) => languageValue(b, metricKey) - languageValue(a, metricKey));
+}
+
+function languageRowForDashboardParty(partyId) {
+  const languageParty = dashboardPartyToLanguageParty[partyId];
+  if (!languageParty) {
+    return null;
+  }
+  return (languageMarkers.partyRows || []).find((row) => row.party === languageParty) || null;
 }
 
 function partyLabel(partyId) {
@@ -408,6 +472,206 @@ function phraseList(rows, options = {}) {
   `;
 }
 
+function renderLanguageMetricSelect(selectId = "languageMetricSelect") {
+  return `
+    <label class="field">
+      <span>Marker</span>
+      <select id="${escapeHtml(selectId)}">
+        ${(languageMarkers.metrics || [])
+          .map(
+            (metric) => `
+              <option value="${escapeHtml(metric.key)}" ${metric.key === state.languageMetric ? "selected" : ""}>
+                ${escapeHtml(metric.label)}
+              </option>
+            `,
+          )
+          .join("")}
+      </select>
+    </label>
+  `;
+}
+
+function renderLanguageMetricChart(metricKey) {
+  const rows = languageRowsForMetric(metricKey);
+  if (!rows.length) {
+    return `<p class="source-note">No language markers available.</p>`;
+  }
+
+  const values = rows.map((row) => languageValue(row, metricKey));
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const range = Math.max(0.0001, maxValue - minValue);
+
+  return `
+    <div class="language-bars">
+      ${rows
+        .map((row, index) => {
+          const value = languageValue(row, metricKey);
+          const width = 12 + ((value - minValue) / range) * 88;
+          return `
+            <div class="language-bar-row">
+              <div class="language-bar-label">
+                <span>${escapeHtml(row.party)}</span>
+                <strong>${escapeHtml(fmtLanguageValue(metricKey, value))}</strong>
+              </div>
+              <div class="language-track" aria-hidden="true">
+                <span class="language-fill" style="width:${width.toFixed(1)}%; background:${languageColor(index)}"></span>
+              </div>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderPronounStack(row) {
+  const total = pronounKeys.reduce((sum, key) => sum + languageValue(row, key), 0);
+  if (!total) {
+    return `<div class="pronoun-stack is-empty"></div>`;
+  }
+
+  return `
+    <div class="pronoun-stack">
+      ${pronounKeys
+        .map((key, index) => {
+          const value = languageValue(row, key);
+          const width = (value / total) * 100;
+          return `
+            <span
+              style="width:${width.toFixed(1)}%; background:${languageColor(index)}"
+              title="${escapeHtml(key)} ${escapeHtml(fmtLanguageValue(key, value))}"
+            ></span>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderPronounDistribution() {
+  const rows = [...(languageMarkers.partyRows || [])].sort((a, b) => {
+    const totalA = pronounKeys.reduce((sum, key) => sum + languageValue(a, key), 0);
+    const totalB = pronounKeys.reduce((sum, key) => sum + languageValue(b, key), 0);
+    return totalB - totalA;
+  });
+
+  if (!rows.length) {
+    return `<p class="source-note">No pronoun markers available.</p>`;
+  }
+
+  return `
+    <div class="pronoun-legend">
+      ${pronounKeys
+        .map(
+          (key, index) => `
+            <span><span class="swatch" style="background:${languageColor(index)}"></span>${escapeHtml(key)}</span>
+          `,
+        )
+        .join("")}
+    </div>
+    <div class="pronoun-list">
+      ${rows
+        .map((row) => {
+          const total = pronounKeys.reduce((sum, key) => sum + languageValue(row, key), 0);
+          return `
+            <div class="pronoun-row">
+              <div class="language-bar-label">
+                <span>${escapeHtml(row.party)}</span>
+                <strong>${escapeHtml(fmtLanguageValue("nous", total))}</strong>
+              </div>
+              ${renderPronounStack(row)}
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderLanguageMatrix() {
+  const rows = [...(languageMarkers.partyRows || [])].sort((a, b) => a.party.localeCompare(b.party));
+  if (!rows.length) {
+    return "";
+  }
+
+  return `
+    <div class="language-table-wrap">
+      <table class="language-table">
+        <thead>
+          <tr>
+            <th>Party</th>
+            ${lexicalMetricKeys
+              .map((key) => `<th>${escapeHtml(languageMetric(key).shortLabel)}</th>`)
+              .join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map(
+              (row) => `
+                <tr>
+                  <th>${escapeHtml(row.party)}</th>
+                  ${lexicalMetricKeys
+                    .map((key) => `<td>${escapeHtml(fmtLanguageValue(key, languageValue(row, key)))}</td>`)
+                    .join("")}
+                </tr>
+              `,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderPartyLanguageProfile(row) {
+  if (!row) {
+    return `
+      <h3 class="section-title">Language profile</h3>
+      <p class="source-note">No party-level marker row matched this dashboard group.</p>
+    `;
+  }
+
+  return `
+    <h3 class="section-title">Language profile</h3>
+    <p class="source-note">Source party: ${escapeHtml(row.party)}</p>
+    <div class="language-mini-grid">
+      ${lexicalMetricKeys
+        .map(
+          (key) => `
+            <div class="stat">
+              <span>${escapeHtml(languageMetric(key).shortLabel)}</span>
+              <strong>${escapeHtml(fmtLanguageValue(key, languageValue(row, key)))}</strong>
+            </div>
+          `,
+        )
+        .join("")}
+    </div>
+    <div class="party-pronoun-card">
+      <div class="language-bar-label">
+        <span>Pronouns</span>
+        <strong>${escapeHtml(
+          fmtLanguageValue(
+            "nous",
+            pronounKeys.reduce((sum, key) => sum + languageValue(row, key), 0),
+          ),
+        )}</strong>
+      </div>
+      ${renderPronounStack(row)}
+      <div class="pronoun-legend">
+        ${pronounKeys
+          .map(
+            (key, index) => `
+              <span><span class="swatch" style="background:${languageColor(index)}"></span>${escapeHtml(key)}</span>
+            `,
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
 function markerTabs(markers) {
   const categories = Object.keys(markers || {});
   if (!categories.length) {
@@ -505,6 +769,7 @@ function renderPartyPanel() {
   const partyId = selected || "LFI_NFP";
   const party = partyMap.get(partyId);
   const phrases = data.partyPhrases[partyId] || { common: {}, distinctive: {} };
+  const languageRow = languageRowForDashboardParty(partyId);
 
   return `
     <div class="detail-body">
@@ -535,6 +800,7 @@ function renderPartyPanel() {
         <div class="stat"><span>Speeches</span><strong>${fmtInt(party?.speechCount)}</strong></div>
         <div class="stat"><span>Tokens</span><strong>${fmtInt(party?.analysisTokenCount)}</strong></div>
       </div>
+      ${renderPartyLanguageProfile(languageRow)}
       <div class="two-column">
         <section>
           <h3 class="section-title">Common phrases</h3>
@@ -548,6 +814,46 @@ function renderPartyPanel() {
           })}
         </section>
       </div>
+    </div>
+  `;
+}
+
+function renderLanguageMarkersPanel() {
+  const rows = languageRowsForMetric(state.languageMetric);
+  const metric = languageMetric(state.languageMetric);
+  const summary = languageMarkers.summary?.[state.languageMetric] || {};
+  const highest = rows[0];
+  const lowest = rows[rows.length - 1];
+
+  return `
+    <div class="detail-body language-dashboard">
+      <div class="panel-control marker-control">
+        ${renderLanguageMetricSelect()}
+      </div>
+      <h2>Language markers</h2>
+      <div class="stat-grid">
+        <div class="stat"><span>Parties</span><strong>${fmtInt(languageMarkers.partyRows?.length || 0)}</strong></div>
+        <div class="stat"><span>Highest ${escapeHtml(metric.shortLabel)}</span><strong>${escapeHtml(
+          highest ? fmtLanguageValue(state.languageMetric, languageValue(highest, state.languageMetric)) : "n/a",
+        )}</strong></div>
+        <div class="stat"><span>Mean ${escapeHtml(metric.shortLabel)}</span><strong>${escapeHtml(
+          summary.mean === undefined ? "n/a" : fmtLanguageValue(state.languageMetric, summary.mean),
+        )}</strong></div>
+      </div>
+
+      <h3 class="section-title">${escapeHtml(metric.label)}</h3>
+      <p class="source-note">${escapeHtml(metric.description || "")}</p>
+      ${renderLanguageMetricChart(state.languageMetric)}
+
+      <h3 class="section-title">Pronoun distribution</h3>
+      ${renderPronounDistribution()}
+
+      <h3 class="section-title">Lexical measures</h3>
+      ${renderLanguageMatrix()}
+
+      <p class="source-note section-title">Data source</p>
+      <p class="source-note">${escapeHtml(languageMarkers.source || data.meta.sources.languageMarkers || "")}</p>
+      <p class="source-note">${escapeHtml(lowest ? `Lowest ${metric.shortLabel}: ${lowest.party}` : "")}</p>
     </div>
   `;
 }
@@ -608,6 +914,8 @@ function renderCorpusPanel() {
 function renderAnalysis() {
   if (state.activeTab === "party") {
     analysisContent.innerHTML = renderPartyPanel();
+  } else if (state.activeTab === "markers") {
+    analysisContent.innerHTML = renderLanguageMarkersPanel();
   } else if (state.activeTab === "corpus") {
     analysisContent.innerHTML = renderCorpusPanel();
   } else {
@@ -731,6 +1039,10 @@ analysisContent.addEventListener("change", (event) => {
   }
   if (event.target.id === "partyPanelNgram" || event.target.id === "corpusPanelNgram") {
     state.ngram = event.target.value;
+    render();
+  }
+  if (event.target.id === "languageMetricSelect") {
+    state.languageMetric = event.target.value;
     render();
   }
 });

@@ -16,9 +16,33 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from analyze_project_ngrams import CONTENT_EXCLUDE_TERMS  # noqa: E402
 
+
+def first_existing(*paths: Path) -> Path:
+    for path in paths:
+        if path.exists():
+            return path
+    return paths[0]
+
+
+def display_path(path: Path) -> str:
+    for base in (ROOT, ROOT.parent):
+        try:
+            return str(path.relative_to(base))
+        except ValueError:
+            continue
+    return str(path)
+
+
+def resolve_source_path(relative_path: str) -> Path:
+    return first_existing(ROOT / relative_path, ROOT.parent / relative_path)
+
+
 OUTPUT_DIR = ROOT / "dashboard" / "data"
 
-ANALYSIS_DIR = ROOT / "analysis_outputs" / "plain_project_content_stable"
+ANALYSIS_DIR = first_existing(
+    ROOT / "analysis_outputs" / "plain_project_content_stable",
+    ROOT.parent / "analysis_outputs" / "plain_project_content_stable",
+)
 SUMMARY_PATH = ANALYSIS_DIR / "analysis_summary.json"
 SPEAKER_ACTIVITY_PATH = ANALYSIS_DIR / "speaker_activity.csv"
 PARTY_ACTIVITY_PATH = ANALYSIS_DIR / "party_activity.csv"
@@ -26,11 +50,82 @@ GLOBAL_NGRAMS_PATH = ANALYSIS_DIR / "global_common_ngrams.csv"
 PARTY_COMMON_PATH = ANALYSIS_DIR / "party_common_ngrams.csv"
 PARTY_DISTINCTIVE_PATH = ANALYSIS_DIR / "party_distinctive_ngrams.csv"
 SPEAKER_TFIDF_PATH = ANALYSIS_DIR / "speaker_tfidf_ngrams.csv"
+LANGUAGE_MARKERS_PATH = first_existing(
+    ROOT / "metrics_CSV" / "metriche_by_party.csv",
+    ROOT / "Politica" / "metrics_CSV" / "metriche_by_party.csv",
+    ROOT.parent / "Politica" / "metrics_CSV" / "metriche_by_party.csv",
+    ROOT.parent / "metrics_CSV" / "metriche_by_party.csv",
+)
 
 NGRAM_SIZES = (1, 2, 3, 4)
 MARKER_NGRAM_SIZES = (2, 3, 4, 5)
 TOP_CONTENT = 14
 TOP_MARKERS = 14
+LANGUAGE_METRICS = [
+    {
+        "key": "LD",
+        "label": "Lexical density",
+        "shortLabel": "LD",
+        "unit": "percent",
+        "description": "Share of lexical/content words.",
+    },
+    {
+        "key": "BW",
+        "label": "Big words",
+        "shortLabel": "BW",
+        "unit": "percent",
+        "description": "Share of words longer than 6 characters.",
+    },
+    {
+        "key": "MWL",
+        "label": "Mean word length",
+        "shortLabel": "MWL",
+        "unit": "chars",
+        "description": "Average word length in characters.",
+    },
+    {
+        "key": "MSL",
+        "label": "Mean sentence length",
+        "shortLabel": "MSL",
+        "unit": "words",
+        "description": "Average sentence length in words.",
+    },
+    {
+        "key": "TTR",
+        "label": "Type-token ratio",
+        "shortLabel": "TTR",
+        "unit": "ratio",
+        "description": "Lexical diversity ratio.",
+    },
+    {
+        "key": "nous",
+        "label": "nous",
+        "shortLabel": "nous",
+        "unit": "perMille",
+        "description": "Occurrences per thousand words.",
+    },
+    {
+        "key": "je",
+        "label": "je",
+        "shortLabel": "je",
+        "unit": "perMille",
+        "description": "Occurrences per thousand words.",
+    },
+    {
+        "key": "il",
+        "label": "il",
+        "shortLabel": "il",
+        "unit": "perMille",
+        "description": "Occurrences per thousand words.",
+    },
+    {
+        "key": "vous",
+        "label": "vous",
+        "shortLabel": "vous",
+        "unit": "perMille",
+        "description": "Occurrences per thousand words.",
+    },
+]
 
 PARTY_CONFIG = [
     {"id": "LFI_NFP", "label": "LFI / NFP", "family": "Left", "color": "#c43b58"},
@@ -337,7 +432,7 @@ def build_politician_records() -> tuple[list[dict[str, object]], dict[str, dict[
         name = row["speaker"]
         party = row["party"]
         politician_id = f"{slugify(name)}--{slugify(party)}"
-        source_path = ROOT / row["source_path"]
+        source_path = resolve_source_path(row["source_path"])
 
         if politician_id not in grouped:
             grouped[politician_id] = {
@@ -516,6 +611,43 @@ def build_tfidf_phrases() -> dict[str, dict[str, list[dict[str, object]]]]:
     return dict(grouped)
 
 
+def build_language_markers() -> dict[str, object]:
+    if not LANGUAGE_MARKERS_PATH.exists():
+        return {
+            "source": "",
+            "metrics": LANGUAGE_METRICS,
+            "partyRows": [],
+            "summary": {},
+        }
+
+    metric_keys = [metric["key"] for metric in LANGUAGE_METRICS]
+    party_rows: list[dict[str, object]] = []
+    for row in read_csv(LANGUAGE_MARKERS_PATH):
+        values = {key: float_value(row.get(key)) for key in metric_keys}
+        party_rows.append({
+            "party": row["party"],
+            "values": values,
+        })
+
+    summary: dict[str, dict[str, float]] = {}
+    for key in metric_keys:
+        values = [float(row["values"][key]) for row in party_rows]  # type: ignore[index]
+        if not values:
+            continue
+        summary[key] = {
+            "min": min(values),
+            "max": max(values),
+            "mean": sum(values) / len(values),
+        }
+
+    return {
+        "source": display_path(LANGUAGE_MARKERS_PATH),
+        "metrics": LANGUAGE_METRICS,
+        "partyRows": party_rows,
+        "summary": summary,
+    }
+
+
 def build_party_data(politicians: list[dict[str, object]]) -> list[dict[str, object]]:
     party_activity = {row["party"]: row for row in read_csv(PARTY_ACTIVITY_PATH)}
     politician_counts = Counter(str(item["party"]) for item in politicians)
@@ -553,6 +685,7 @@ def main() -> None:
             {str(size): [] for size in NGRAM_SIZES},
         )
     parties = build_party_data(politicians)
+    language_markers = build_language_markers()
 
     party_common = group_ngram_rows(
         read_csv(PARTY_COMMON_PATH),
@@ -590,13 +723,14 @@ def main() -> None:
             "totalAnalysisTokens": summary.get("total_analysis_tokens"),
             "partySourceSpeechCounts": summary.get("party_source_speech_counts", {}),
             "sources": {
-                "summary": str(SUMMARY_PATH.relative_to(ROOT)),
-                "speakerActivity": str(SPEAKER_ACTIVITY_PATH.relative_to(ROOT)),
-                "partyActivity": str(PARTY_ACTIVITY_PATH.relative_to(ROOT)),
-                "globalCommonNgrams": str(GLOBAL_NGRAMS_PATH.relative_to(ROOT)),
-                "partyCommonNgrams": str(PARTY_COMMON_PATH.relative_to(ROOT)),
-                "partyDistinctiveNgrams": str(PARTY_DISTINCTIVE_PATH.relative_to(ROOT)),
-                "speakerTfidfNgrams": str(SPEAKER_TFIDF_PATH.relative_to(ROOT)),
+                "summary": display_path(SUMMARY_PATH),
+                "speakerActivity": display_path(SPEAKER_ACTIVITY_PATH),
+                "partyActivity": display_path(PARTY_ACTIVITY_PATH),
+                "globalCommonNgrams": display_path(GLOBAL_NGRAMS_PATH),
+                "partyCommonNgrams": display_path(PARTY_COMMON_PATH),
+                "partyDistinctiveNgrams": display_path(PARTY_DISTINCTIVE_PATH),
+                "speakerTfidfNgrams": display_path(SPEAKER_TFIDF_PATH),
+                "languageMarkers": language_markers["source"],
             },
         },
         "partyOrder": [config["id"] for config in PARTY_CONFIG],
@@ -605,6 +739,7 @@ def main() -> None:
         "phrasesByPolitician": phrases_by_politician,
         "partyPhrases": party_phrases,
         "globalPhrases": global_common,
+        "languageMarkers": language_markers,
     }
 
     json_path = OUTPUT_DIR / "dashboard-data.json"

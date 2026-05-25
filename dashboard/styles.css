@@ -458,6 +458,167 @@ h1 {
   font-weight: 800;
 }
 
+.language-dashboard h2 {
+  margin-bottom: 12px;
+  font-size: 1.2rem;
+  line-height: 1.15;
+}
+
+.marker-control {
+  grid-template-columns: 1fr;
+}
+
+.language-bars,
+.pronoun-list {
+  display: grid;
+  gap: 10px;
+}
+
+.language-bar-row,
+.pronoun-row {
+  display: grid;
+  gap: 5px;
+}
+
+.language-bar-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.language-bar-label span {
+  min-width: 0;
+  overflow: hidden;
+  color: #34383d;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.language-bar-label strong {
+  flex: 0 0 auto;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.language-track,
+.pronoun-stack {
+  height: 11px;
+  overflow: hidden;
+  border: 1px solid #e3e0d8;
+  border-radius: 999px;
+  background: #f4f1ea;
+}
+
+.language-fill,
+.pronoun-stack span {
+  display: block;
+  height: 100%;
+}
+
+.pronoun-stack {
+  display: flex;
+}
+
+.pronoun-stack.is-empty {
+  background: repeating-linear-gradient(
+    90deg,
+    #f4f1ea 0,
+    #f4f1ea 6px,
+    #e3e0d8 6px,
+    #e3e0d8 7px
+  );
+}
+
+.pronoun-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.pronoun-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.language-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.language-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.language-table th,
+.language-table td {
+  padding: 8px 9px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.language-table th:first-child,
+.language-table td:first-child {
+  text-align: left;
+}
+
+.language-table tbody th {
+  max-width: 220px;
+  overflow: hidden;
+  color: #34383d;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.language-table tbody tr:last-child th,
+.language-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.language-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.language-mini-grid .stat {
+  min-width: 0;
+  padding: 8px;
+}
+
+.language-mini-grid .stat strong {
+  font-size: 0.88rem;
+}
+
+.party-pronoun-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfaf7;
+}
+
+.party-pronoun-card .pronoun-legend {
+  margin-bottom: 0;
+}
+
 .two-column {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -570,6 +731,7 @@ h1 {
 
   .summary-strip,
   .stat-grid,
+  .language-mini-grid,
   .two-column,
   .panel-control {
     grid-template-columns: 1fr;
