@@ -1,4 +1,4 @@
-# Politica NLP Project
+# Polititia NLP Project
 
 Static dashboard and data-analysis pipeline for French parliamentary speech
 transcripts from the Assemblee nationale open-data Syceron XML archive.
